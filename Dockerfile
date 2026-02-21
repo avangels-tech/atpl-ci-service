@@ -1,3 +1,3 @@
 FROM nginx:alpine
 
-COPY index.html /usr/share/nginx/html/index.html
+RUN echo "AVANGELSIN TEST APP - v2" > /usr/share/nginx/html/index.html

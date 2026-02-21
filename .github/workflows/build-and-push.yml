@@ -1,4 +1,4 @@
-name: Build and Push to ECR
+name: Build, Push and Update GitOps
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  id-token: write   # Required for OIDC
+  id-token: write
   contents: read
 
 jobs:
@@ -14,13 +14,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Source
+      - name: Checkout App Repo
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::971691552202:role/atpl-github-ecr-push-role
+          role-to-assume: arn:aws:iam::971691552202:role/atpl-github-avangelsin-role
           aws-region: ap-south-1
 
       - name: Login to Amazon ECR
@@ -29,13 +29,35 @@ jobs:
       - name: Set Image Tag
         run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
 
-      - name: Build Docker Image
+      - name: Build and Push Image
         run: |
-          docker build -t atpl/app-service:${IMAGE_TAG} .
-          docker tag atpl/app-service:${IMAGE_TAG} \
-          971691552202.dkr.ecr.ap-south-1.amazonaws.com/atpl/app-service:${IMAGE_TAG}
+          docker build -t test-app:${IMAGE_TAG} .
+          docker tag test-app:${IMAGE_TAG} \
+          971691552202.dkr.ecr.ap-south-1.amazonaws.com/atpl/avangelsin/test-app:${IMAGE_TAG}
+          docker push 971691552202.dkr.ecr.ap-south-1.amazonaws.com/atpl/avangelsin/test-app:${IMAGE_TAG}
 
-      - name: Push Docker Image
+      # -----------------------------
+      # GitOps Automation Starts Here
+      # -----------------------------
+
+      - name: Checkout Tenants Repo
+        uses: actions/checkout@v4
+        with:
+          repository: avangels-tech/tenants
+          token: ${{ secrets.TENANTS_REPO_TOKEN }}
+          path: tenants-repo
+
+      - name: Update Image in GitOps
         run: |
-          docker push 971691552202.dkr.ecr.ap-south-1.amazonaws.com/atpl/app-service:${IMAGE_TAG}
+          cd tenants-repo/avangelsin
+          sed -i "s|image: .*test-app:.*|image: 971691552202.dkr.ecr.ap-south-1.amazonaws.com/atpl/avangelsin/test-app:${IMAGE_TAG}|g" test-app-deployment.yaml
+
+      - name: Commit and Push GitOps Change
+        run: |
+          cd tenants-repo
+          git config user.name "ATPL CI"
+          git config user.email "ci@atpl.local"
+          git add .
+          git commit -m "Update avangelsin test-app image to ${IMAGE_TAG}" || echo "No changes to commit"
+          git push
 
